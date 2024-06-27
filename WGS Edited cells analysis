@@ -1,0 +1,59 @@
+# Create directories for raw data and QC results
+mkdir -p data/raw data/clean data/qc
+
+# Run FastQC for initial quality check
+fastqc data/raw/*.fastq.gz -o data/qc
+
+# Trim adapters and remove low-quality reads with Trimmomatic
+for file in data/raw/*_R1.fastq.gz; do
+    base=$(basename $file "_R1.fastq.gz")
+    trimmomatic PE data/raw/${base}_R1.fastq.gz data/raw/${base}_R2.fastq.gz \
+        data/clean/${base}_R1_paired.fastq.gz data/clean/${base}_R1_unpaired.fastq.gz \
+        data/clean/${base}_R2_paired.fastq.gz data/clean/${base}_R2_unpaired.fastq.gz \
+        ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 SLIDINGWINDOW:4:20 MINLEN:36
+done
+
+# Index the reference genome if not already indexed
+bwa index reference_genome.fa
+
+# Align reads to the reference genome using BWA-MEM
+for file in data/clean/*_R1_paired.fastq.gz; do
+    base=$(basename $file "_R1_paired.fastq.gz")
+    bwa mem -t 8 reference_genome.fa data/clean/${base}_R1_paired.fastq.gz data/clean/${base}_R2_paired.fastq.gz \
+        | samtools view -bS - > data/aligned/${base}.bam
+done
+
+# Sort and index BAM files using SAMtools
+for file in data/aligned/*.bam; do
+    base=$(basename $file ".bam")
+    samtools sort -o data/aligned/${base}_sorted.bam $file
+    samtools index data/aligned/${base}_sorted.bam
+done
+
+# Using GATK HaplotypeCaller for variant calling
+for file in data/aligned/*_sorted.bam; do
+    base=$(basename $file "_sorted.bam")
+    gatk --java-options "-Xmx4g" HaplotypeCaller \
+        -R reference_genome.fa \
+        -I $file \
+        -O data/variants/${base}.vcf.gz
+done
+
+# Annotate variants using SnpEff
+for file in data/variants/*.vcf.gz; do
+    base=$(basename $file ".vcf.gz")
+    java -Xmx4g -jar snpEff.jar eff -v hg38 $file > data/variants/${base}_annotated.vcf
+done
+
+# Python code to compare variants
+import pandas as pd
+
+# Load variant data
+edited = pd.read_csv('data/variants/edited_annotated.vcf', sep='\t', comment='#')
+non_edited = pd.read_csv('data/variants/non_edited_annotated.vcf', sep='\t', comment='#')
+
+# Identify differences
+differences = edited.compare(non_edited)
+
+# Save the results
+differences.to_csv('data/analysis/editing_differences.csv')

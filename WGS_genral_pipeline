@@ -1,0 +1,74 @@
+WGS ANALYSIS PIPELINE: EXAMPLE with BWA Aligner!!
+
+Quality Control (QC):
+
+# Run FastQC on the fastq files
+fastqc sample_R1.fastq.gz sample_R2.fastq.gz
+
+# Run Trimmomatic to trim and filter low-quality reads
+java -jar trimmomatic.jar PE -phred33 sample_R1.fastq.gz sample_R2.fastq.gz sample_R1_trimmed.fastq.gz sample_R1_unpaired.fastq.gz sample_R2_trimmed.fastq.gz sample_R2_unpaired.fastq.gz LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+
+Read Alignment:
+# Align the trimmed reads to the reference genome using BWA
+bwa mem -t 8 reference_genome.fa sample_R1_trimmed.fastq.gz sample_R2_trimmed.fastq.gz > sample.sam
+
+Sorting and Indexing:
+# Sort the aligned reads using Samtools
+samtools sort -@ 8 sample.sam -o sample_sorted.bam
+
+# Create an index for the sorted bam file
+samtools index sample_sorted.bam
+
+Marking Duplicates:
+# Mark duplicates using Picard
+java -jar picard.jar MarkDuplicates I=sample_sorted.bam O=sample_sorted_marked.bam M=sample.metrics
+
+Variant Calling:
+# Call variants using GATK HaplotypeCaller
+java -jar gatk.jar HaplotypeCaller -R reference_genome.fa -I sample_sorted_marked.bam -O sample.vcf
+
+Variant Filtering:
+# Filter variants using GATK VariantFiltration
+java -jar gatk.jar VariantFiltration -R reference_genome.fa -V sample.vcf -O sample_filtered.vcf --filter-expression "QD < 2.0 || FS > 60.0 || MQ < 40.0 || MQRankSum < -12.5 || ReadPosRankSum < -8.0" --filter-name "my_filter"
+
+Annotation:
+# Annotate variants using ANNOVAR
+table_annovar.pl sample_filtered.vcf humandb/ -buildver hg38 -out sample_annovar -remove -protocol refGene,gnomad_exome,gnomad_genome -operation g,f,f -nastring . -vcfinput
+
+
+
+########## USING STAR AS AN ALIGNER ############
+
+Quality Control (QC):
+# Run FastQC on the fastq files
+fastqc sample_R1.fastq.gz sample_R2.fastq.gz
+
+# Run Trimmomatic to trim and filter low-quality reads
+java -jar trimmomatic.jar PE -phred33 sample_R1.fastq.gz sample_R2.fastq.gz sample_R1_trimmed.fastq.gz sample_R1_unpaired.fastq.gz sample_R2_trimmed.fastq.gz sample_R2_unpaired.fastq.gz LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+
+Read Alignment:
+# Align the trimmed reads to the reference genome using BWA
+bwa mem -t 8 reference_genome.fa sample_R1_trimmed.fastq.gz sample_R2_trimmed.fastq.gz > sample.sam
+
+Sorting and Indexing:
+# Sort the aligned reads using Samtools
+samtools sort -@ 8 sample.sam -o sample_sorted.bam
+
+# Create an index for the sorted bam file
+samtools index sample_sorted.bam
+
+Marking Duplicates:
+# Mark duplicates using Picard
+java -jar picard.jar MarkDuplicates I=sample_sorted.bam O=sample_sorted_marked.bam M=sample.metrics
+
+Variant Calling:
+# Call variants using GATK HaplotypeCaller
+java -jar gatk.jar HaplotypeCaller -R reference_genome.fa -I sample_sorted_marked.bam -O sample.vcf
+
+Variant Filtering:
+# Filter variants using GATK VariantFiltration
+java -jar gatk.jar VariantFiltration -R reference_genome.fa -V sample.vcf -O sample_filtered.vcf --filter-expression "QD < 2.0 || FS > 60.0 || MQ < 40.0 || MQRankSum < -12.5 || ReadPosRankSum < -8.0" --filter-name "my_filter"
+
+Annotation:
+# Annotate variants using ANNOVAR
+table_annovar.pl sample_filtered.vcf humandb/ -buildver hg38 -out sample_annovar -remove -protocol refGene,gnomad_exome,gnomad_genome -operation g,f,f -nastring . -vcfinput
